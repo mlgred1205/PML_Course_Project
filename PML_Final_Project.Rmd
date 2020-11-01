@@ -123,7 +123,7 @@ pred_tree <- predict(dec_tree, testData, type = "class")
 cm_tree <- confusionMatrix(pred_tree, testData$classe)
 cm_tree
 ```
-The decision tree accuracy is 75.3% while the out-of-sample error is 24.7%. 
+The decision tree accuracy is 75.4% while the out-of-sample error is 24.6%. 
 
 ### *3.2 Prediction with generalized boosting model*
 ```{r}
