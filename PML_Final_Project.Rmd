@@ -1,0 +1,185 @@
+---
+title: "Practical Machine Learning Course Project"
+output: html_document
+---
+### *Miranda L. Gardner*
+### *2020-10-29*
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## **1. BACKGROUND**
+
+As provided by the coursera.org website and instructions for this assignment:  
+  
+"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)."  
+  
+  
+## **2. DATA**
+
+The training data for this report can be accessed at the link below:  
+[Training Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The testing data for this report can be accessed at the link below:  
+[Testing Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+  
+### *2.1 Load Libraries for Data Analysis*
+The following packages are loaded into the R environment for downstream data analysis:
+```{r, message=F}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(gbm)
+```
+  
+### *2.2 Load and Examine Data*
+The data files are read into two variables, train and valid, for the training and testing CSVs respectively. 
+```{r}
+train <- read.csv("pml-training.csv")
+dim(train)
+
+
+valid <- read.csv("pml-testing.csv")
+dim(valid)
+
+```
+As seen above, the raw data contains 19622  observations of 160 variables in the training set and 20 observations of 160 variables in the testing set.  
+
+### *2.3 Clean the Data*
+In this section, we will first remove the variables containing all missing values and additionally omit the first seven variables from analysis as they are more qualitative and will have little influence on how the data is classified.
+```{r}
+train2 <- train[, colSums(is.na(train)) == 0]
+valid2 <- valid[, colSums(is.na(valid)) == 0]
+  
+trainData <- train2[, -c(1:7)]
+validData <- valid2[, -c(1:7)]
+dim(trainData)
+dim(validData)
+
+```
+As seen above, the filtered data contains 19622  observations of 86 variables in the training set and 20 observations of 53 variables in the testing set.  
+
+### *2.4 Partition the Data for Prediction*
+The training data will be split into 70% train and 30% test to minimize bias and overfitting and to compute the out-of-sample errors
+```{r}
+set.seed(060301) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+trainData <- trainData[inTrain, ]
+testData <- trainData[-inTrain, ]
+dim(trainData)
+```
+
+Variables with near-zero variance are removed as they will not be important factors in modeling the data. 
+```{r}
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+```
+As seen above, this results in a final dataset of 53 variables. 
+  
+  
+The corrplot demonstrates the variables that are most highly correlated (darkest colors). 
+```{r}
+cor_mat <- cor(trainData[, c(-53)])
+col<- colorRampPalette(c("red", "white", "gray"))(30)
+
+corrplot(cor_mat, order = "FPC", method = "color", type = "upper", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0), tl.srt=45, col = col)
+
+```
+  
+  
+These variables can be filtered out of the data with the following block of code.
+```{r}
+highlyCorrelated = findCorrelation(cor_mat, cutoff=0.80)
+names(trainData)[highlyCorrelated]
+```
+
+
+## **3. MODEL BUILDING**
+I tested three different models to find the best algorithm for outcome prediction as assessed by the highest accuracy and lowest out-of-sample error. The three models tested were:  
+     1. Decision trees with rpart  
+     2. Gradient boosting with gbm  
+     3. Random forest with rf
+  
+### *3.1 Prediction with decision trees*
+Obtain the model and plot as a dendogram.
+```{r}
+set.seed(120579)
+dec_tree <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(dec_tree)
+
+```
+  
+  
+Validate model with testing data and assess performance as measured by accuracy.  
+```{r}
+pred_tree <- predict(dec_tree, testData, type = "class")
+cm_tree <- confusionMatrix(pred_tree, testData$classe)
+cm_tree
+```
+The decision tree accuracy is 75.3% while the out-of-sample error is 24.7%. 
+
+### *3.2 Prediction with generalized boosting model*
+```{r}
+set.seed(98765)
+ctrl_gbm <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+mod_gbm  <- train(classe ~ ., data=trainData, method = "gbm", 
+                  trControl = ctrl_gbm, verbose = FALSE)
+mod_gbm$finalModel
+```
+
+Validate the model and assess performance with accuracy calculations  
+```{r}
+pred_gbm <- predict(mod_gbm, newdata=testData)
+cm_gbm <- confusionMatrix(pred_gbm, testData$classe)
+cm_gbm
+```
+The gbm model accuracy is 97.4% while the out-of-sample error is 2.6%.
+
+### *3.3 Prediction with random forest modeling*
+```{r}
+set.seed(01031975)
+ctrl_rf <- trainControl(method="cv", number=3, verboseIter=FALSE)
+mod_rf <- train(classe ~ ., data=trainData, method="rf", trControl=ctrl_rf)
+mod_rf$finalModel
+```
+  
+Validate the model and assess performance with accuracy calculations  
+```{r}
+pred_rf <- predict(mod_rf, newdata=testData)
+cm_rf <- confusionMatrix(pred_rf, testData$classe)
+cm_rf
+
+```
+The random forest model accuracy is 100% while the out-of-sample error is 0%.
+
+## **4. Conclusions**
+```{r}
+acc_res <- data.frame(
+  Model = c('CART', 'GBM', 'RF'),
+  Accuracy = rbind(cm_tree$overall[1], cm_gbm$overall[1], cm_rf$overall[1])
+)
+print(acc_res)
+
+```
+The decision tree has the lowest accuracy at 0.75, followed by gbm at 0.97 and the most accurate model is random forest at 1. This model could be overfitting the data and may warrent more investigation. 
+
+## **5. Apply Model to Validation Data**
+```{r}
+final_val <- predict(mod_rf, newdata=validData)
+final_val
+
+```
+
+
+
+
+
+    
+
